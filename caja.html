@@ -262,7 +262,7 @@ const sum=a=>a.reduce((s,x)=>s+x,0);
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1800)}
 const $=s=>document.querySelector(s);
 const el=(h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild};
-const parseNum=v=>{if(v==null)return 0;v=String(v).replace(/\s|\$/g,'');if(/,\d{1,2}$/.test(v)){v=v.replace(/\./g,'').replace(',','.')}else{v=v.replace(/,/g,'')}const n=parseFloat(v);return isNaN(n)?0:n};
+const parseNum=v=>{if(v==null)return 0;v=String(v).replace(/\s|\$/g,'');if(v.includes(',')){v=v.replace(/\./g,'').replace(',','.')}else if(/^\d{1,3}(\.\d{3})+$/.test(v)){v=v.replace(/\./g,'')}const n=parseFloat(v);return isNaN(n)?0:n};
 
 /* ===================== DÓLAR (TC Banco Nación venta) ===================== */
 const fmtUsd=n=>'US$ '+Number(n).toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:2});
@@ -478,6 +478,17 @@ function formPendiente(p){
 }
 
 /* ===================== ALCANCÍAS ===================== */
+/* Campo de monto con selector $/US$ que convierte a la moneda destino (la de la alcancía) */
+function montoBoxTo(id,label,dest,valor=''){return `<div class="row between" style="margin:14px 0 8px"><label class="f" style="margin:0">${label}</label><div class="cur" id="${id}Sel"><button type="button" data-m="ARS" class="${dest==='ARS'?'on':''}">$ Pesos</button><button type="button" data-m="USD" class="${dest==='USD'?'on':''}">US$ Dólares</button></div></div>
+  <div class="amount-input"><span id="${id}Sym">${dest==='USD'?'US$':'$'}</span><input id="${id}" type="text" inputmode="decimal" placeholder="0" value="${valor}" autocomplete="off"></div><div class="conv" id="${id}Conv"></div>`}
+function bindMontoTo(s,id,dest){const st={moneda:dest};
+  const upd=()=>{const v=parseNum($('#'+id).value);const tc=tcHoy();$('#'+id+'Sym').textContent=st.moneda==='USD'?'US$':'$';const c=$('#'+id+'Conv');
+    if(st.moneda===dest)c.textContent='';else if(!tc)c.innerHTML='⚠️ Sin cotización del dólar (Ajustes)';else if(v>0)c.innerHTML=`= <b>${dest==='USD'?fmtUsd(v/tc):fmtMoney(Math.round(v*tc))}</b> al TC ${fmtMoney(tc)} (BNA venta, hoy)`;else c.textContent=`Se convierte a ${dest==='USD'?'dólares':'pesos'} al TC ${fmtMoney(tc)}`};
+  s.querySelectorAll('#'+id+'Sel button').forEach(b=>b.onclick=()=>{st.moneda=b.dataset.m;s.querySelectorAll('#'+id+'Sel button').forEach(x=>x.classList.remove('on'));b.classList.add('on');upd()});
+  $('#'+id).addEventListener('input',upd);upd();
+  /* devuelve el valor ya convertido a la moneda destino (null si inválido) */
+  return ()=>{const v=parseNum($('#'+id).value);if(v<=0)return 0;if(st.moneda===dest)return v;const tc=tcHoy();if(!tc){toast('Falta la cotización del dólar (Ajustes)');return null}return dest==='USD'?Math.round(v/tc*100)/100:Math.round(v*tc)}}
+
 function renderAlc(){
   const v=$('#v-alc');const tot=sum(D.alcancias.map(alcAho)),obj=sum(D.alcancias.map(alcObj));
   v.innerHTML=`${D.alcancias.length?`<div class="grid2" style="margin-bottom:14px"><div class="tile"><div class="label">Total ahorrado</div><div class="val num">${fmtMoney(tot,true)}</div></div><div class="tile"><div class="label">Falta en total</div><div class="val num">${fmtMoney(Math.max(0,obj-tot),true)}</div></div></div>`:''}
@@ -494,35 +505,37 @@ function renderAlc(){
   v.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>formAlcancia(D.alcancias.find(a=>a.id===b.dataset.edit)));
   const n=$('#newAlc');if(n)n.onclick=()=>formAlcancia();
 }
-function moverAlc(id,dir){const a=D.alcancias.find(x=>x.id===id);const usd=a.moneda==='USD';const falta=a.objetivo-a.ahorrado;
-  openSheet(`<h2>${dir>0?'Guardar en':'Retirar de'} ${esc(a.nombre)}</h2><div class="small muted">Ahorrado: ${fmtAlc(a,a.ahorrado)}${dir>0&&falta>0?' · Faltan '+fmtAlc(a,falta):''}</div>
-    <label class="f">Monto${usd?' en dólares':''}</label><div class="amount-input"><span>${usd?'US$':'$'}</span><input id="fMonto" type="text" inputmode="decimal" placeholder="0"></div><div class="conv" id="conv"></div>
+function moverAlc(id,dir){const a=D.alcancias.find(x=>x.id===id);const usd=a.moneda==='USD';const dest=usd?'USD':'ARS';const falta=a.objetivo-a.ahorrado;
+  const s=openSheet(`<h2>${dir>0?'Guardar en':'Retirar de'} ${esc(a.nombre)}</h2><div class="small muted">Ahorrado: ${fmtAlc(a,a.ahorrado)}${dir>0&&falta>0?' · Faltan '+fmtAlc(a,falta):''}</div>
+    ${montoBoxTo('fMonto','Monto',dest)}
     ${dir>0&&falta>0?`<button class="btn ghost" id="fAll" style="width:auto;margin-top:6px">Completar lo que falta (${fmtAlc(a,falta)})</button>`:''}
     <div style="height:18px"></div><button class="btn" id="fSave">${dir>0?'Guardar':'Retirar'}</button>`);
-  const upd=()=>{const v=parseNum($('#fMonto').value);const tc=tcHoy();$('#conv').textContent=(v>0&&tc)?(usd?`≈ ${fmtMoney(Math.round(v*tc))} al TC ${fmtMoney(tc)}`:`≈ ${fmtUsd(v/tc)}`):''};
-  $('#fMonto').addEventListener('input',upd);
+  const leer=bindMontoTo(s,'fMonto',dest);
   setTimeout(()=>$('#fMonto').focus(),150);
-  const all=$('#fAll');if(all)all.onclick=()=>{$('#fMonto').value=falta;upd()};
-  $('#fSave').onclick=()=>{const m=parseNum($('#fMonto').value);if(m<=0){toast('Ingresá un monto');return}if(dir<0&&m>a.ahorrado){toast('No hay tanto ahorrado');return}a.ahorrado=Math.round((a.ahorrado+dir*m)*100)/100;save();closeSheet();render();toast(dir>0?'¡Guardado! 🐷':'Retirado')};
+  const all=$('#fAll');if(all)all.onclick=()=>{s.querySelector(`#fMontoSel button[data-m="${dest}"]`).click();$('#fMonto').value=falta;$('#fMonto').dispatchEvent(new Event('input'))};
+  $('#fSave').onclick=()=>{const m=leer();if(m===null)return;if(m<=0){toast('Ingresá un monto');return}if(dir<0&&m>a.ahorrado){toast('No hay tanto ahorrado');return}a.ahorrado=Math.round((a.ahorrado+dir*m)*100)/100;save();closeSheet();render();toast(dir>0?'¡Guardado! 🐷':'Retirado')};
 }
 function formAlcancia(a){
   const edit=!!a;let color=a?.color||'#0f766e',emoji=a?.emoji||'🎯',descontar=a?.descontar??true;const st={moneda:a?.moneda||'ARS',tc:null};
   const s=openSheet(`<h2>${edit?'Editar alcancía':'Nueva alcancía'}</h2>
     <label class="f">Nombre</label><input class="input" id="fNombre" placeholder="Ej: Vacaciones, Auto, Fondo de emergencia" value="${esc(a?.nombre||'')}">
     <div style="height:8px"></div>${montoBox(a?a.objetivo:'',st).replace('>Monto<','>Objetivo<')}
-    ${edit?'':`<label class="f">Ya tengo ahorrado (opcional)</label><input class="input" id="fIni" type="text" inputmode="decimal" placeholder="0">`}
+    ${edit?'':`<div id="iniBox">${montoBoxTo('fIni','Ya tengo ahorrado (opcional)',st.moneda)}</div>`}
     <div class="switch" style="margin-top:10px"><div><b>Descontar del dinero disponible</b><div class="small muted">Si está activo, lo ahorrado no se cuenta como disponible para gastar.</div></div><button class="tog ${descontar?'on':''}" id="fTog" aria-label="Descontar"></button></div>
     <label class="f">Ícono</label><div class="emojis" id="fEmojis">${EMOJIS.map(e=>`<button type="button" class="${e===emoji?'on':''}" data-e="${e}">${e}</button>`).join('')}</div>
     <label class="f">Color</label><div class="colors" id="fColors">${PALETTE.map(c=>`<button type="button" class="${c===color?'on':''}" data-c="${c}" style="background:${c}"></button>`).join('')}</div>
     <div style="height:18px"></div><button class="btn" id="fSave">${edit?'Guardar':'Crear alcancía'}</button>
     ${edit?`<div style="height:10px"></div><button class="btn danger" id="fDel">Eliminar alcancía</button>`:''}`);
   bindMoneda(s,st);
+  let leerIni=()=>0;
+  if(!edit){const mkIni=()=>{const v=$('#fIni')?.value||'';$('#iniBox').innerHTML=montoBoxTo('fIni','Ya tengo ahorrado (opcional)',st.moneda,v);leerIni=bindMontoTo(s,'fIni',st.moneda)};mkIni();
+    s.querySelectorAll('#curSel button').forEach(b=>b.addEventListener('click',mkIni))}
   if(edit&&a.ahorrado>0){s.querySelectorAll('#curSel button').forEach(b=>{if(b.dataset.m!==st.moneda){b.disabled=true;b.style.opacity=.4}})}
   $('#fTog').onclick=()=>{descontar=!descontar;$('#fTog').classList.toggle('on',descontar)};
   s.querySelectorAll('#fEmojis button').forEach(b=>b.onclick=()=>{emoji=b.dataset.e;s.querySelectorAll('#fEmojis button').forEach(x=>x.classList.remove('on'));b.classList.add('on')});
   s.querySelectorAll('#fColors button').forEach(b=>b.onclick=()=>{color=b.dataset.c;s.querySelectorAll('#fColors button').forEach(x=>x.classList.remove('on'));b.classList.add('on')});
   $('#fSave').onclick=()=>{const nombre=$('#fNombre').value.trim();const objetivo=parseNum($('#fMonto').value);if(!nombre){toast('Poné un nombre');return}if(objetivo<=0){toast('Definí un objetivo');return}if(st.moneda==='USD'&&!tcHoy()){toast('Falta la cotización del dólar (Ajustes)');return}
-    if(edit){Object.assign(a,{nombre,objetivo,color,emoji,descontar,moneda:st.moneda})}else D.alcancias.push({id:uid(),nombre,objetivo,ahorrado:parseNum($('#fIni')?.value),color,emoji,descontar,moneda:st.moneda});
+    if(edit){Object.assign(a,{nombre,objetivo,color,emoji,descontar,moneda:st.moneda})}else{const ini=leerIni();if(ini===null)return;D.alcancias.push({id:uid(),nombre,objetivo,ahorrado:ini,color,emoji,descontar,moneda:st.moneda})}
     save();closeSheet();render();toast(edit?'Guardado':'Alcancía creada 🐷')};
   if(edit)$('#fDel').onclick=()=>{if(confirm('¿Eliminar la alcancía "'+a.nombre+'"?')){D.alcancias=D.alcancias.filter(x=>x.id!==a.id);save();closeSheet();render()}};
 }
