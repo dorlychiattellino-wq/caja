@@ -1,6 +1,6 @@
 // Service worker: deja la app disponible sin conexión.
-const CACHE = 'flujocaja-v1';
-const FILES = ['./caja.html', './caja-manifest.json', './icons/caja-icon.svg', './icons/caja-icon-192.png', './icons/caja-icon-512.png', './icons/caja-icon-180.png'];
+const CACHE = 'flujocaja-v2';
+const FILES = ['./caja.html', './caja-manifest.json', './caja-icon.svg', './caja-icon-192.png', './caja-icon-512.png', './caja-icon-180.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 // Red primero (para recibir actualizaciones), caché si no hay conexión.
